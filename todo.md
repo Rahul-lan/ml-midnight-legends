@@ -32,3 +32,11 @@
 - [x] Add integration-style coverage for binary upload, public listing, and anonymous public download
 - [x] Add browser-level or equivalent verification for signed-in upload visibility and anonymous download
 - [x] Add one unified upload-to-public-list-to-anonymous-download flow test using shared test state
+- [x] Remove sign-in requirement from the binary upload endpoint
+- [x] Define anonymous uploader behavior without exposing private account data
+- [x] Remove sign-in prompts and account-only controls from the public wall UI
+- [x] Update README for anonymous public uploads and abuse considerations
+- [x] Add anonymous upload-flow test coverage and verify responsive behavior
+- [x] Update the public API test to match anonymous responses without owner flags
+- [x] Mark OAuth and cookie environment setup optional for the anonymous wall in README
+- [x] Capture fresh desktop verification of the final no-sign-in upload UI

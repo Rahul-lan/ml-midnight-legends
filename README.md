@@ -1,18 +1,18 @@
 # ML’s (Midnight Legend’s)
 
-ML’s is a responsive public upload wall for discovering and sharing creative work, documents, media, archives, and code. Visitors can browse, search, download, and copy links to files already on the wall. Uploading remains sign-in protected so every upload has an accountable owner and can be removed safely by that owner or a moderation workflow.
+ML’s is a responsive public upload wall for discovering and sharing creative work, documents, media, archives, and code. Anyone can browse, search, upload, download, and copy links to files on the wall. Uploads are intentionally anonymous, so the public deployment should use rate limiting, abuse reporting, moderation, and storage quotas before high-traffic launch.
 
 ## What is included
 
-The app uses Manus OAuth for sign-in, a MySQL-compatible database for file metadata, and the platform’s S3-compatible object-storage helpers for file bytes. The database stores the owner ID, original filename, size, MIME type, storage key, upload timestamp, and optional share token. **File bytes are never stored in the database.**
+The app uses a MySQL-compatible database for file metadata and the platform’s S3-compatible object-storage helpers for file bytes. Existing OAuth-backed moderation procedures can be enabled later without changing the anonymous upload wall. The database stores the owner ID, original filename, size, MIME type, storage key, upload timestamp, and optional share token. **File bytes are never stored in the database.**
 
 | Capability | Implementation |
 | --- | --- |
 | Uploads | Drag-and-drop and multi-file picker with per-file progress, success, and error states |
 | Supported content | Documents, images, archives, audio, video, code, and arbitrary browser-recognized file types |
-| Authentication | Manus OAuth; browsing and downloads are public, while uploads and owner actions require sign-in |
+| Access | Browsing, uploads, downloads, and link copying are public; moderation remains server-side |
 | Storage | Secure S3-compatible storage through `storagePut` and signed delivery URLs |
-| Public wall | Search, type indicators, public signed downloads, copyable links, and owner-safe deletion |
+| Public wall | Search, type indicators, public signed downloads, copyable links, and moderation-ready removal APIs |
 | Limits | 250 MB per file by default; change the server and client constants together if needed |
 
 ## Local development
@@ -24,7 +24,7 @@ pnpm install
 pnpm dev
 ```
 
-The managed environment supplies the platform variables listed below. Do not commit a `.env` file or place credentials in client-side source code.
+The managed environment supplies the platform variables listed below. For the anonymous wall, `DATABASE_URL`, `BUILT_IN_FORGE_API_URL`, and `BUILT_IN_FORGE_API_KEY` are the core runtime requirements. OAuth and session variables are optional future moderation infrastructure. Do not commit a `.env` file or place credentials in client-side source code.
 
 | Variable | Purpose |
 | --- | --- |
@@ -38,7 +38,7 @@ The managed environment supplies the platform variables listed below. Do not com
 
 ## Storage and sharing model
 
-Browser uploads use a same-origin binary endpoint at `POST /api/files/upload`. The server authenticates the session, sanitizes the filename, uploads the bytes through the preconfigured S3-compatible helper, and writes metadata to the `files` table. Public visitors use `files.publicList` and receive signed delivery URLs through `files.publicDownload`; the public route is also available at `/api/files/public/:id`. The owner-scoped procedures remain available for private management and moderation-safe deletion. Every uploaded record is visible on the public wall by design.
+Browser uploads use a same-origin binary endpoint at `POST /api/files/upload`. The server accepts an anonymous request, sanitizes the filename, uploads the bytes through the preconfigured S3-compatible helper, and writes metadata to the `files` table with a nullable owner reference. Public visitors use `files.publicList` and receive signed delivery URLs through `files.publicDownload`; the public route is also available at `/api/files/public/:id`. The owner-scoped procedures remain available for future authenticated moderation tooling; the anonymous UI does not expose delete controls. Every uploaded record is visible on the public wall by design.
 
 Deleting a library row intentionally removes the application reference without attempting to delete the underlying object, matching the platform storage contract. For production retention and storage-cost policies, add a separate reviewed cleanup process rather than deleting objects during a user request.
 
@@ -74,7 +74,7 @@ pnpm build
 NODE_ENV=production pnpm start
 ```
 
-The host must provide a persistent MySQL/TiDB-compatible database, HTTPS cookies, the required OAuth redirect configuration, and all environment variables above at runtime. Do not expose `BUILT_IN_FORGE_API_KEY` to browser code. Configure the OAuth callback as `<your-production-origin>/api/oauth/callback`, and ensure the host forwards `/api/*` requests to the same Node process that serves the built frontend.
+The host must provide a persistent MySQL/TiDB-compatible database and the storage variables at runtime. HTTPS is strongly recommended for production file delivery. Do not expose `BUILT_IN_FORGE_API_KEY` to browser code. OAuth, HTTPS session cookies, and callback configuration are optional until authenticated moderation is enabled. In all cases, ensure the host forwards `/api/*` requests to the same Node process that serves the built frontend.
 
 ## GitHub publishing
 

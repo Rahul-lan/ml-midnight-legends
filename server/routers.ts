@@ -18,9 +18,9 @@ export const appRouter = router({
     }),
   }),
   files: router({
-    publicList: publicProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ ctx, input }) => {
+    publicList: publicProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ input }) => {
       const publicFiles = await listPublicFiles(input?.search);
-      return publicFiles.map(({ userId, ...file }) => ({ ...file, isOwner: ctx.user?.id === userId }));
+      return publicFiles.map(({ userId: _userId, ...file }) => file);
     }),
     publicDownload: publicProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
       const file = await getFileById(input.id);

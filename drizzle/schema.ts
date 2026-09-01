@@ -14,7 +14,7 @@ export const users = mysqlTable("users", {
 
 export const files = mysqlTable("files", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+  userId: int("userId"),
   name: varchar("name", { length: 255 }).notNull(),
   size: int("size").notNull(),
   mimeType: varchar("mimeType", { length: 255 }).notNull(),

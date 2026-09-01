@@ -12,22 +12,18 @@ export function safeFileName(rawName: string) {
   return base.replace(/[\u0000-\u001f<>:"/\\|?*]/g, "-").trim().slice(0, 180) || "untitled";
 }
 
-export function buildFileMetadata(userId: number, name: string, size: number, mimeType: string, storageKey: string) {
+export function buildFileMetadata(userId: number | null, name: string, size: number, mimeType: string, storageKey: string) {
   return { userId, name: safeFileName(name), size, mimeType: mimeType.slice(0, 255), storageKey };
 }
 
 export function registerFileRoutes(app: Express) {
   app.post("/api/files/upload", async (req: Request, res: Response) => {
     try {
-      let user;
+      let user = null;
       try {
         user = await sdk.authenticateRequest(req);
       } catch {
         user = null;
-      }
-      if (!user) {
-        res.status(401).json({ error: "Sign in required" });
-        return;
       }
       const body = req.body as Buffer;
       if (!Buffer.isBuffer(body) || body.length === 0) {
@@ -40,9 +36,9 @@ export function registerFileRoutes(app: Express) {
       }
       const name = safeFileName(String(req.header("x-file-name") || "untitled"));
       const mimeType = String(req.header("x-file-type") || "application/octet-stream").slice(0, 255);
-      const key = `user-${user.id}/files/${nanoid(14)}-${name}`;
+      const key = `public/files/${nanoid(14)}-${name}`;
       const stored = await storagePut(key, body, mimeType);
-      const id = await insertFile(buildFileMetadata(user.id, name, body.length, mimeType, stored.key));
+      const id = await insertFile(buildFileMetadata(user?.id ?? null, name, body.length, mimeType, stored.key));
       res.status(201).json({ id, name, size: body.length, mimeType, uploadedAt: new Date().toISOString() });
     } catch (error) {
       console.error("[Files] Upload failed:", error);

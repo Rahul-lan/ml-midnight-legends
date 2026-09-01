@@ -43,7 +43,7 @@ describe("files access control and library behavior", () => {
     const caller = appRouter.createCaller(context(null));
     const publicFiles = await caller.files.publicList({ search: "cover" });
     expect(publicFiles).toHaveLength(1);
-    expect(publicFiles[0]).toMatchObject({ id: 2, name: "cover.png", isOwner: false });
+    expect(publicFiles[0]).toMatchObject({ id: 2, name: "cover.png" });
     expect(publicFiles[0]).not.toHaveProperty("userId");
     await expect(caller.files.publicDownload({ id: 2 })).resolves.toEqual({ url: "https://signed.example/user-7/cover" });
   });
