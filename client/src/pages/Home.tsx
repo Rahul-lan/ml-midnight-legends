@@ -1,33 +1,80 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
-import { Streamdown } from 'streamdown';
+import { startLogin } from "@/const";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import {
+  Archive, AudioLines, Check, ChevronDown, Clipboard, Cloud, Code2, Download, File, FileImage, FileText, Film, FolderOpen, Loader2, LockKeyhole, MoreHorizontal, Plus, Search, Share2, ShieldCheck, Sparkles, Trash2, UploadCloud, X, Zap,
+} from "lucide-react";
 
-/**
- * All content in this page are only for example, replace with your own feature implementation
- * When building pages, remember your instructions in Frontend Workflow, Frontend Best Practices, Design Guide and Common Pitfalls
- */
-export default function Home() {
-  // The useAuth hook provides authentication state.
-  // To implement login/logout, call logout(), or start login from an event
-  // handler: onClick={() => startLogin()} (imported from "@/const"). Never call
-  // startLogin() during render (no href={startLogin()}) — it mints a one-time
-  // nonce cookie and must run only at the moment of navigation.
-  let { user, loading, error, isAuthenticated, logout } = useAuth();
+const ACCEPT = ".pdf,.doc,.docx,.txt,.md,.csv,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.svg,.zip,.rar,.7z,.tar,.gz,.mp3,.wav,.m4a,.mp4,.mov,.webm,.js,.ts,.tsx,.jsx,.py,.java,.c,.cpp,.go,.rs,.json,.yaml,.yml,.xml,.html,.css,.sql,.sh,.apk,.iso";
+const MAX_FILE_SIZE = 250 * 1024 * 1024;
+type UploadItem = { id: string; file: globalThis.File; progress: number; status: "uploading" | "success" | "error"; error?: string };
 
-  // If theme is switchable in App.tsx, we can implement theme toggling like this:
-  // const { theme, toggleTheme } = useTheme();
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <main>
-        {/* Example: lucide-react for icons */}
-        <Loader2 className="animate-spin" />
-        Example Page
-        {/* Example: Streamdown for markdown rendering */}
-        <Streamdown>Any **markdown** content</Streamdown>
-        <Button variant="default">Example Button</Button>
-      </main>
-    </div>
-  );
+function formatBytes(bytes: number) {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  return `${(bytes / 1024 ** index).toFixed(index ? 1 : 0)} ${units[index]}`;
 }
+
+function fileKind(mime: string, name: string) {
+  const ext = name.split(".").pop()?.toLowerCase();
+  if (mime.startsWith("image/")) return { icon: FileImage, color: "text-rose-300", bg: "bg-rose-400/10" };
+  if (mime.startsWith("audio/")) return { icon: AudioLines, color: "text-violet-300", bg: "bg-violet-400/10" };
+  if (mime.startsWith("video/")) return { icon: Film, color: "text-cyan-300", bg: "bg-cyan-400/10" };
+  if (["zip", "rar", "7z", "tar", "gz", "iso"].includes(ext || "")) return { icon: Archive, color: "text-amber-300", bg: "bg-amber-400/10" };
+  if (["js", "ts", "tsx", "jsx", "py", "java", "c", "cpp", "go", "rs", "json", "yaml", "yml", "xml", "html", "css", "sql", "sh"].includes(ext || "")) return { icon: Code2, color: "text-emerald-300", bg: "bg-emerald-400/10" };
+  if (mime.includes("pdf") || mime.includes("text") || mime.includes("document") || mime.includes("spreadsheet")) return { icon: FileText, color: "text-blue-300", bg: "bg-blue-400/10" };
+  return { icon: File, color: "text-slate-300", bg: "bg-slate-400/10" };
+}
+
+function UploadCard({ item, onDismiss }: { item: UploadItem; onDismiss: () => void }) {
+  const kind = fileKind(item.file.type, item.file.name);
+  const Icon = kind.icon;
+  return <div className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.035] px-3 py-3 animate-in fade-in slide-in-from-top-2 duration-200">
+    <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${kind.bg}`}><Icon className={`h-5 w-5 ${kind.color}`} /></div>
+    <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium text-white">{item.file.name}</div><div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>{formatBytes(item.file.size)}</span><span className="h-1 w-1 rounded-full bg-slate-700" /><span className={item.status === "error" ? "text-rose-300" : item.status === "success" ? "text-emerald-300" : "text-slate-500"}>{item.status === "uploading" ? `Uploading ${item.progress}%` : item.status === "success" ? "Secured in your vault" : item.error || "Upload failed"}</span></div>{item.status === "uploading" && <div className="mt-2 h-1 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-400 transition-all duration-200" style={{ width: `${item.progress}%` }} /></div>}</div>
+    {item.status === "success" ? <div className="grid h-7 w-7 place-items-center rounded-full bg-emerald-400/10"><Check className="h-4 w-4 text-emerald-300" /></div> : item.status === "error" ? <button onClick={onDismiss} className="text-slate-500 hover:text-white" aria-label="Dismiss upload error"><X className="h-4 w-4" /></button> : <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />}
+  </div>;
+}
+
+export default function Home() {
+  const { user, loading, isAuthenticated, logout } = useAuth();
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploads, setUploads] = useState<UploadItem[]>([]);
+  const [search, setSearch] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const utils = trpc.useUtils();
+  const filesQuery = trpc.files.list.useQuery({ search: search || undefined }, { enabled: isAuthenticated });
+  const sharing = trpc.files.setSharing.useMutation({ onSuccess: () => utils.files.list.invalidate() });
+  const remove = trpc.files.remove.useMutation({ onSuccess: () => { toast.success("File removed from your vault"); utils.files.list.invalidate(); } });
+  const files = filesQuery.data ?? [];
+
+  const uploadFile = useCallback((file: globalThis.File) => {
+    if (file.size > MAX_FILE_SIZE) { toast.error(`${file.name} is larger than 250 MB`); return; }
+    const id = `${file.name}-${file.lastModified}-${Math.random()}`;
+    setUploads(current => [{ id, file, progress: 0, status: "uploading" as const }, ...current].slice(0, 5));
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/files/upload");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("X-File-Name", encodeURIComponent(file.name));
+    xhr.setRequestHeader("X-File-Type", file.type || "application/octet-stream");
+    xhr.upload.onprogress = event => { if (event.lengthComputable) setUploads(current => current.map(item => item.id === id ? { ...item, progress: Math.round(event.loaded / event.total * 100) } : item)); };
+    xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { setUploads(current => current.map(item => item.id === id ? { ...item, progress: 100, status: "success" } : item)); utils.files.list.invalidate(); toast.success(`${file.name} uploaded securely`); } else { let message = "Upload failed"; try { message = JSON.parse(xhr.responseText).error || message; } catch {} setUploads(current => current.map(item => item.id === id ? { ...item, status: "error", error: message } : item)); } };
+    xhr.onerror = () => setUploads(current => current.map(item => item.id === id ? { ...item, status: "error", error: "Network error" } : item));
+    xhr.send(file);
+  }, [utils.files.list]);
+
+  const handleFiles = (fileList: FileList | null) => { if (!fileList) return; Array.from(fileList).forEach(uploadFile); if (inputRef.current) inputRef.current.value = ""; };
+  const greeting = useMemo(() => user?.name ? user.name.split(" ")[0] : "Creator", [user?.name]);
+
+  const copyLink = async (token: string) => { const link = `${window.location.origin}/api/files/share/${token}`; await navigator.clipboard.writeText(link); toast.success("Share link copied"); };
+
+  if (loading) return <div className="min-h-screen bg-[#080b14] grid place-items-center"><Loader2 className="h-6 w-6 animate-spin text-cyan-300" /></div>;
+  if (!isAuthenticated) return <div className="min-h-screen overflow-hidden bg-[#080b14] text-white"><div className="pointer-events-none fixed inset-0 opacity-40 [background:radial-gradient(circle_at_20%_10%,rgba(76,112,255,.2),transparent_35%),radial-gradient(circle_at_85%_70%,rgba(147,51,234,.17),transparent_35%)]" /><main className="relative mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-6 lg:px-10"><header className="flex items-center justify-between"><Logo /><button onClick={() => startLogin()} className="rounded-full border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10">Sign in</button></header><section className="flex flex-1 items-center py-20"><div className="max-w-3xl"><div className="mb-6 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/8 px-3 py-1.5 text-xs text-cyan-200"><Sparkles className="h-3.5 w-3.5" /> Your private corner of the cloud</div><h1 className="max-w-3xl text-5xl font-semibold leading-[1.04] tracking-[-0.04em] text-white sm:text-7xl">Move files with a little more <span className="bg-gradient-to-r from-cyan-200 via-blue-200 to-violet-300 bg-clip-text text-transparent">midnight magic.</span></h1><p className="mt-7 max-w-xl text-lg leading-8 text-slate-400">ML’s is a quiet, secure home for the files that matter. Upload anything, keep it organized, and share it only when you choose.</p><div className="mt-9 flex flex-wrap gap-3"><button onClick={() => startLogin()} className="group inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-50">Open your vault <ChevronDown className="h-4 w-4 -rotate-90 transition group-hover:translate-x-0.5" /></button><div className="flex items-center gap-2 px-2 text-sm text-slate-500"><ShieldCheck className="h-4 w-4 text-emerald-300" /> Private by default</div></div><div className="mt-16 grid max-w-2xl grid-cols-3 gap-6 border-t border-white/10 pt-6 text-sm"><div><div className="text-white">Any format</div><div className="mt-1 text-slate-500">Docs, media, code</div></div><div><div className="text-white">Cloud backed</div><div className="mt-1 text-slate-500">Durable storage</div></div><div><div className="text-white">Yours only</div><div className="mt-1 text-slate-500">Scoped library</div></div></div></div><div className="ml-auto hidden w-[360px] lg:block"><div className="rounded-[28px] border border-white/10 bg-white/[0.045] p-3 shadow-2xl shadow-blue-950/30 rotate-2"><div className="rounded-[21px] border border-white/10 bg-[#0c1120] p-5 -rotate-2"><div className="flex items-center justify-between"><div><div className="text-xs text-slate-500">YOUR VAULT</div><div className="mt-1 text-xl font-medium">Midnight files</div></div><div className="grid h-10 w-10 place-items-center rounded-xl bg-cyan-300/10"><Cloud className="h-5 w-5 text-cyan-300" /></div></div><div className="mt-7 rounded-2xl border border-dashed border-cyan-300/25 bg-cyan-300/[0.04] p-8 text-center"><UploadCloud className="mx-auto h-8 w-8 text-cyan-200" /><div className="mt-3 text-sm text-slate-300">Drop anything here</div><div className="mt-1 text-xs text-slate-600">It stays yours</div></div><div className="mt-4 space-y-2"><div className="h-2 w-3/4 rounded-full bg-white/10" /><div className="h-2 w-1/2 rounded-full bg-white/5" /></div></div></div></div></section></main></div>;
+
+  return <div className="min-h-screen bg-[#080b14] text-white"><div className="pointer-events-none fixed inset-0 opacity-30 [background:radial-gradient(circle_at_0%_0%,rgba(42,93,255,.2),transparent_32%),radial-gradient(circle_at_100%_45%,rgba(125,57,234,.16),transparent_30%)]" /><div className="relative mx-auto max-w-7xl px-5 py-5 sm:px-8 lg:px-10"><header className="flex items-center justify-between border-b border-white/8 pb-5"><Logo /><div className="flex items-center gap-3"><div className="hidden text-right sm:block"><div className="text-sm text-slate-300">{greeting}</div><div className="text-[11px] text-slate-500">Your personal vault</div></div><button onClick={() => logout()} className="grid h-10 w-10 place-items-center rounded-full border border-white/10 bg-white/5 text-sm font-semibold text-cyan-100 hover:bg-white/10" title="Sign out">{(user?.name || "M").slice(0, 1).toUpperCase()}</button></div></header><main className="py-10 sm:py-14"><div className="mb-9 flex flex-col justify-between gap-5 sm:flex-row sm:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.22em] text-cyan-200/80"><Zap className="h-3.5 w-3.5" /> Midnight workspace</div><h1 className="text-3xl font-semibold tracking-[-0.035em] sm:text-5xl">Your files, <span className="text-slate-500">in their element.</span></h1><p className="mt-3 max-w-xl text-sm leading-6 text-slate-400 sm:text-base">A calm place to upload, find, and share the things you create.</p></div><div className="flex items-center gap-2 text-xs text-slate-500"><LockKeyhole className="h-4 w-4 text-emerald-300" /> End-to-end account privacy</div></div><div onDragEnter={event => { event.preventDefault(); setIsDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={event => { if (event.currentTarget === event.target) setIsDragging(false); }} onDrop={event => { event.preventDefault(); setIsDragging(false); handleFiles(event.dataTransfer.files); }} className={`relative overflow-hidden rounded-[26px] border p-5 transition sm:p-8 ${isDragging ? "border-cyan-300/70 bg-cyan-300/10" : "border-white/10 bg-white/[0.045]"}`}><div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-blue-500/10 blur-3xl" /><div className="relative flex flex-col items-center justify-between gap-6 sm:flex-row"><div className="flex items-center gap-4"><div className="grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-cyan-300/20 to-violet-400/20 ring-1 ring-white/10"><UploadCloud className="h-7 w-7 text-cyan-100" /></div><div><h2 className="text-lg font-medium">Drop files to upload</h2><p className="mt-1 text-sm text-slate-500">Any file type · Up to 250 MB each</p></div></div><button onClick={() => inputRef.current?.click()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-50 sm:w-auto"><Plus className="h-4 w-4" /> Choose files</button><input ref={inputRef} type="file" multiple accept={ACCEPT} className="hidden" onChange={event => handleFiles(event.target.files)} /></div>{uploads.length > 0 && <div className="relative mt-6 space-y-2 border-t border-white/8 pt-5">{uploads.map(item => <UploadCard key={item.id} item={item} onDismiss={() => setUploads(current => current.filter(upload => upload.id !== item.id))} />)}</div>}</div><section className="mt-12"><div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 className="text-xl font-medium">Your library <span className="ml-2 text-sm font-normal text-slate-600">{files.length} {files.length === 1 ? "file" : "files"}</span></h2></div><div className="relative w-full sm:w-64"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search your files" className="h-10 w-full rounded-xl border border-white/10 bg-white/[0.045] pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-600 focus:border-cyan-300/40" /></div></div>{filesQuery.isLoading ? <div className="flex items-center gap-2 py-16 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Loading your vault…</div> : filesQuery.isError ? <div className="rounded-2xl border border-rose-300/15 bg-rose-300/[0.04] px-6 py-12 text-center"><X className="mx-auto h-7 w-7 text-rose-300" /><h3 className="mt-4 text-sm font-medium text-slate-200">Your library could not load</h3><p className="mt-2 text-sm text-slate-500">Check your connection and try again.</p><button onClick={() => filesQuery.refetch()} className="mt-5 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium text-slate-200 hover:bg-white/10">Retry</button></div> : files.length === 0 ? <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] px-6 py-16 text-center"><FolderOpen className="mx-auto h-8 w-8 text-slate-600" /><h3 className="mt-4 text-sm font-medium text-slate-300">{search ? "No files match that search" : "Your vault is ready"}</h3><p className="mt-2 text-sm text-slate-600">{search ? "Try a different name or file type." : "Your first upload will appear here."}</p></div> : <div className="overflow-hidden rounded-2xl border border-white/8 bg-white/[0.025]"><div className="hidden grid-cols-[1fr_120px_170px_100px] gap-4 border-b border-white/8 px-5 py-3 text-[10px] uppercase tracking-[0.18em] text-slate-600 sm:grid"><div>Name</div><div>Size</div><div>Uploaded</div><div className="text-right">Actions</div></div>{files.map(file => { const kind = fileKind(file.mimeType, file.name); const Icon = kind.icon; return <div key={file.id} className="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-white/6 px-4 py-4 last:border-0 sm:grid-cols-[1fr_120px_170px_100px] sm:px-5"><div className="flex min-w-0 items-center gap-3"><div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${kind.bg}`}><Icon className={`h-5 w-5 ${kind.color}`} /></div><div className="min-w-0"><div className="truncate text-sm text-slate-200">{file.name}</div><div className="mt-1 truncate text-[11px] text-slate-600">{file.mimeType || "Unknown type"}</div></div></div><div className="hidden text-sm text-slate-500 sm:block">{formatBytes(file.size)}</div><div className="hidden text-sm text-slate-500 sm:block">{new Date(file.uploadedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</div><div className="flex items-center justify-end gap-1"><button onClick={async () => { try { const result = await utils.files.download.fetch({ id: file.id }); window.open(result.url, "_blank", "noopener,noreferrer"); } catch { toast.error("Unable to create a download link"); } }} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-white/8 hover:text-white" title="Download"><Download className="h-4 w-4" /></button><button onClick={async () => { try { if (file.shareToken) { await copyLink(file.shareToken); } else { const result = await sharing.mutateAsync({ id: file.id, enabled: true }); if (result.shareToken) await copyLink(result.shareToken); } } catch { toast.error("Unable to update sharing"); } }} className={`grid h-8 w-8 place-items-center rounded-lg hover:bg-white/8 ${file.shareToken ? "text-cyan-300" : "text-slate-500 hover:text-white"}`} title={file.shareToken ? "Copy share link" : "Enable sharing"}>{file.shareToken ? <Clipboard className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}</button><button onClick={() => { if (window.confirm(`Remove ${file.name}?`)) remove.mutate({ id: file.id }); }} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-rose-400/10 hover:text-rose-300" title="Delete"><Trash2 className="h-4 w-4" /></button></div></div>; })}</div>}</section></main><footer className="flex flex-col justify-between gap-2 border-t border-white/8 py-6 text-xs text-slate-600 sm:flex-row"><span>ML’s · Midnight Legend’s</span><span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-emerald-300/70" /> Private by default</span></footer></div></div>;
+}
+
+function Logo() { return <div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-cyan-300 to-violet-400 text-sm font-black text-slate-950 shadow-lg shadow-cyan-400/10">ML</div><div><div className="font-semibold tracking-tight">ML’s</div><div className="text-[10px] uppercase tracking-[0.22em] text-slate-600">Midnight Legend’s</div></div></div>; }
