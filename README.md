@@ -1,6 +1,6 @@
 # ML’s (Midnight Legend’s)
 
-ML’s is a responsive, account-scoped file upload hub for securely storing and sharing creative work, documents, media, archives, and code. The interface is intentionally calm and focused: upload from a file picker or by dragging files into the vault, then search, download, share, or remove them from one personal library.
+ML’s is a responsive public upload wall for discovering and sharing creative work, documents, media, archives, and code. Visitors can browse, search, download, and copy links to files already on the wall. Uploading remains sign-in protected so every upload has an accountable owner and can be removed safely by that owner or a moderation workflow.
 
 ## What is included
 
@@ -10,9 +10,9 @@ The app uses Manus OAuth for sign-in, a MySQL-compatible database for file metad
 | --- | --- |
 | Uploads | Drag-and-drop and multi-file picker with per-file progress, success, and error states |
 | Supported content | Documents, images, archives, audio, video, code, and arbitrary browser-recognized file types |
-| Authentication | Manus OAuth; uploads and personal library procedures require a signed-in user |
+| Authentication | Manus OAuth; browsing and downloads are public, while uploads and owner actions require sign-in |
 | Storage | Secure S3-compatible storage through `storagePut` and signed delivery URLs |
-| Library | Search, type indicators, download, optional share links, and ownership-safe deletion |
+| Public wall | Search, type indicators, public signed downloads, copyable links, and owner-safe deletion |
 | Limits | 250 MB per file by default; change the server and client constants together if needed |
 
 ## Local development
@@ -38,7 +38,7 @@ The managed environment supplies the platform variables listed below. Do not com
 
 ## Storage and sharing model
 
-Browser uploads use a same-origin binary endpoint at `POST /api/files/upload`. The server authenticates the session, sanitizes the filename, uploads the bytes through the preconfigured S3-compatible helper, and writes metadata to the `files` table. Personal downloads first verify ownership through a protected tRPC procedure and then receive a signed delivery URL. A share link is created only after the owner explicitly enables sharing; disabling sharing clears the token and makes the public route unavailable.
+Browser uploads use a same-origin binary endpoint at `POST /api/files/upload`. The server authenticates the session, sanitizes the filename, uploads the bytes through the preconfigured S3-compatible helper, and writes metadata to the `files` table. Public visitors use `files.publicList` and receive signed delivery URLs through `files.publicDownload`; the public route is also available at `/api/files/public/:id`. The owner-scoped procedures remain available for private management and moderation-safe deletion. Every uploaded record is visible on the public wall by design.
 
 Deleting a library row intentionally removes the application reference without attempting to delete the underlying object, matching the platform storage contract. For production retention and storage-cost policies, add a separate reviewed cleanup process rather than deleting objects during a user request.
 

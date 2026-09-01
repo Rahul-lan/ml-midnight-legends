@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = { files: [] as Array<{ id: number; userId: number; name: string; size: number; mimeType: string; storageKey: string; uploadedAt: Date; shareToken: string | null }> };
 
 vi.mock("./db", () => ({
+  listPublicFiles: vi.fn(async (search?: string) => state.files.filter(file => !search || file.name.includes(search) || file.mimeType.includes(search))),
+  getFileById: vi.fn(async (id: number) => state.files.find(file => file.id === id)),
   listFiles: vi.fn(async (userId: number, search?: string) => {
     return state.files.filter(file => file.userId === userId && (!search || file.name.includes(search) || file.mimeType.includes(search)));
   }),
@@ -35,6 +37,15 @@ describe("files access control and library behavior", () => {
       { id: 1, userId: 7, name: "notes.md", size: 120, mimeType: "text/markdown", storageKey: "user-7/notes", uploadedAt: new Date("2026-01-01"), shareToken: null },
       { id: 2, userId: 7, name: "cover.png", size: 2048, mimeType: "image/png", storageKey: "user-7/cover", uploadedAt: new Date("2026-01-02"), shareToken: "share-2" },
     ];
+  });
+
+  it("allows visitors to browse public files and create public signed links", async () => {
+    const caller = appRouter.createCaller(context(null));
+    const publicFiles = await caller.files.publicList({ search: "cover" });
+    expect(publicFiles).toHaveLength(1);
+    expect(publicFiles[0]).toMatchObject({ id: 2, name: "cover.png", isOwner: false });
+    expect(publicFiles[0]).not.toHaveProperty("userId");
+    await expect(caller.files.publicDownload({ id: 2 })).resolves.toEqual({ url: "https://signed.example/user-7/cover" });
   });
 
   it("builds safe persistent metadata without file bytes", () => {

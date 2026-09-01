@@ -3,7 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
-import { deleteFile, getFileForUser, listFiles, setShareToken } from "./db";
+import { deleteFile, getFileById, getFileForUser, listFiles, listPublicFiles, setShareToken } from "./db";
 import { storageGetSignedUrl } from "./storage";
 import { nanoid } from "nanoid";
 
@@ -18,6 +18,15 @@ export const appRouter = router({
     }),
   }),
   files: router({
+    publicList: publicProcedure.input(z.object({ search: z.string().optional() }).optional()).query(async ({ ctx, input }) => {
+      const publicFiles = await listPublicFiles(input?.search);
+      return publicFiles.map(({ userId, ...file }) => ({ ...file, isOwner: ctx.user?.id === userId }));
+    }),
+    publicDownload: publicProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ input }) => {
+      const file = await getFileById(input.id);
+      if (!file) throw new Error("File not found");
+      return { url: await storageGetSignedUrl(file.storageKey) };
+    }),
     list: protectedProcedure.input(z.object({ search: z.string().optional() }).optional()).query(({ ctx, input }) => listFiles(ctx.user.id, input?.search)),
     download: protectedProcedure.input(z.object({ id: z.number().int().positive() })).query(async ({ ctx, input }) => {
       const file = await getFileForUser(input.id, ctx.user.id);

@@ -93,3 +93,22 @@ export async function deleteFile(id: number, userId: number) {
   if (!db) throw new Error("Database is not configured");
   await db.delete(files).where(and(eq(files.id, id), eq(files.userId, userId)));
 }
+
+export async function listPublicFiles(search?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  const searchFilter = search?.trim()
+    ? or(like(files.name, `%${search.trim()}%`), like(files.mimeType, `%${search.trim()}%`))
+    : undefined;
+  return db.select({ id: files.id, userId: files.userId, name: files.name, size: files.size, mimeType: files.mimeType, uploadedAt: files.uploadedAt })
+    .from(files)
+    .where(searchFilter)
+    .orderBy(desc(files.uploadedAt));
+}
+
+export async function getFileById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(files).where(eq(files.id, id)).limit(1);
+  return result[0];
+}

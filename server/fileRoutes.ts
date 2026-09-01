@@ -1,6 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { sdk } from "./_core/sdk";
-import { insertFile, getFileByShareToken } from "./db";
+import { insertFile, getFileById, getFileByShareToken } from "./db";
 import { storageGetSignedUrl, storagePut } from "./storage";
 import { nanoid } from "nanoid";
 
@@ -47,6 +47,17 @@ export function registerFileRoutes(app: Express) {
     } catch (error) {
       console.error("[Files] Upload failed:", error);
       res.status(500).json({ error: error instanceof Error ? error.message : "Upload failed" });
+    }
+  });
+
+  app.get("/api/files/public/:id", async (req: Request, res: Response) => {
+    try {
+      const file = await getFileById(Number(req.params.id));
+      if (!file) { res.status(404).send("This file is no longer available."); return; }
+      res.redirect(302, await storageGetSignedUrl(file.storageKey));
+    } catch (error) {
+      console.error("[Files] Public delivery failed:", error);
+      res.status(500).send("Unable to deliver this file.");
     }
   });
 

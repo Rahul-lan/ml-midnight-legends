@@ -16,3 +16,19 @@
 - [x] Expand Vitest coverage for owned-file listing, search, sharing, deletion, and upload metadata
 - [x] Preserve existing share links when copying instead of toggling sharing unexpectedly
 - [x] Add Vitest coverage for upload metadata creation and persistence inputs
+- [x] Change upload wall from private-library default to publicly visible files
+- [x] Add public file listing and public signed delivery flow
+- [x] Preserve uploader ownership metadata and add moderation-safe delete behavior
+- [x] Redesign the homepage as a public upload wall with visitor-facing file cards
+- [x] Update public visibility tests and README privacy/deployment guidance
+- [x] Verify public upload, listing, download, and responsive UI behavior
+- [x] Remove share tokens from public list responses
+- [x] Replace public wall rows with visitor-facing file cards
+- [x] Remove leftover private/dead-code copy and clarify owner-only controls
+- [x] Re-run public flow tests and mobile responsive verification
+- [x] Hide or accurately scope delete controls to the uploader’s own public files
+- [x] Add a clear non-owner state for public cards
+- [x] Strengthen real public upload/list/download integration coverage
+- [x] Add integration-style coverage for binary upload, public listing, and anonymous public download
+- [x] Add browser-level or equivalent verification for signed-in upload visibility and anonymous download
+- [x] Add one unified upload-to-public-list-to-anonymous-download flow test using shared test state
